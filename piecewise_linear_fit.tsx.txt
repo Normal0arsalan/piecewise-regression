@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Scatter, ScatterChart, ZAxis } from 'recharts';
+import { ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { Upload, Play, Trash2 } from 'lucide-react';
 
-export default function PiecewiseLinearFit() {
+export default function PiecewiseLinearInterpolation() {
   const [points, setPoints] = useState([]);
   const [segments, setSegments] = useState([]);
-  const [numSegments, setNumSegments] = useState(3);
   const [inputText, setInputText] = useState('');
 
   const parseInput = (text) => {
@@ -21,18 +20,12 @@ export default function PiecewiseLinearFit() {
         }
       }
     }
-    return parsed;
-  };
-
-  const handleLoadData = () => {
-    const parsed = parseInput(inputText);
-    if (parsed.length > 0) {
-      setPoints(parsed);
-      setSegments([]);
-    }
+    // مرتب‌سازی اولیه بر اساس X برای اطمینان از اتصال صحیح
+    return parsed.sort((a, b) => a.x - b.x);
   };
 
   const findNearestToYAxis = (pts) => {
+    if (pts.length === 0) return null;
     let nearest = pts[0];
     let minX = Math.abs(pts[0].x);
     for (let pt of pts) {
@@ -44,75 +37,64 @@ export default function PiecewiseLinearFit() {
     return nearest;
   };
 
-  const linearRegression = (pts) => {
-    const n = pts.length;
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
-    
-    for (let pt of pts) {
-      sumX += pt.x;
-      sumY += pt.y;
-      sumXY += pt.x * pt.y;
-      sumX2 += pt.x * pt.x;
+  const handleLoadData = () => {
+    const parsed = parseInput(inputText);
+    if (parsed.length > 0) {
+      setPoints(parsed);
+      setSegments([]);
     }
-    
-    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    const intercept = (sumY - slope * sumX) / n;
-    
-    return { slope, intercept };
   };
 
-  const calculateR2 = (pts, slope, intercept) => {
-    const meanY = pts.reduce((sum, pt) => sum + pt.y, 0) / pts.length;
-    let ssRes = 0, ssTot = 0;
-    
-    for (let pt of pts) {
-      const predicted = slope * pt.x + intercept;
-      ssRes += Math.pow(pt.y - predicted, 2);
-      ssTot += Math.pow(pt.y - meanY, 2);
+  // ***** تابع اصلی تغییر یافته: اجرای میان‌یابی خطی *****
+  const performInterpolation = () => {
+    if (points.length < 2) {
+      setSegments([]);
+      return;
     }
-    
-    return 1 - (ssRes / ssTot);
-  };
 
-  const performSegmentation = () => {
-    if (points.length < 2) return;
-
-    const sorted = [...points].sort((a, b) => a.x - b.x);
-    const segmentSize = Math.floor(sorted.length / numSegments);
+    // چون parseInput قبلاً نقاط را بر اساس X مرتب کرده، نیاز به مرتب‌سازی دوباره نیست.
     const newSegments = [];
 
-    for (let i = 0; i < numSegments; i++) {
-      const start = i * segmentSize;
-      const end = i === numSegments - 1 ? sorted.length : (i + 1) * segmentSize;
-      const segmentPoints = sorted.slice(start, end);
+    // حلقه از اولین نقطه تا نقطه ماقبل آخر
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
       
-      if (segmentPoints.length >= 2) {
-        const { slope, intercept } = linearRegression(segmentPoints);
-        const r2 = calculateR2(segmentPoints, slope, intercept);
-        
-        const xStart = segmentPoints[0].x;
-        const xEnd = segmentPoints[segmentPoints.length - 1].x;
-        const yStart = slope * xStart + intercept;
-        const yEnd = slope * xEnd + intercept;
-        
+      // اگر دو نقطه مختصات X یکسان داشته باشند، شیب نامحدود است
+      if (p2.x === p1.x) {
         newSegments.push({
           id: i + 1,
-          slope: slope.toFixed(4),
-          intercept: intercept.toFixed(4),
-          r2: r2.toFixed(4),
-          xRange: `[${xStart.toFixed(2)}, ${xEnd.toFixed(2)}]`,
-          lineData: [
-            { x: xStart, y: yStart },
-            { x: xEnd, y: yEnd }
-          ]
+          slope: '∞',
+          intercept: 'N/A',
+          r2: '1.0000', // دقت کامل، چون نقاط دقیقا وصل شده‌اند
+          xRange: `[${p1.x.toFixed(2)}, ${p2.x.toFixed(2)}]`,
+          lineData: [p1, p2],
         });
+        continue;
       }
+
+      // 1. محاسبه شیب (m)
+      const slope = (p2.y - p1.y) / (p2.x - p1.x);
+      
+      // 2. محاسبه عرض از مبدأ (b)
+      // y = m*x + b  =>  b = y - m*x
+      const intercept = p1.y - slope * p1.x;
+      
+      newSegments.push({
+        id: i + 1,
+        slope: slope.toFixed(4),
+        intercept: intercept.toFixed(4),
+        r2: '1.0000', // دقت کامل (میان‌یابی)، چون خط دقیقاً از دو نقطه می‌گذرد
+        xRange: `[${p1.x.toFixed(2)}, ${p2.x.toFixed(2)}]`,
+        lineData: [p1, p2]
+      });
     }
 
     setSegments(newSegments);
   };
 
   const generateSampleData = () => {
+    // ایجاد داده‌های نمونه (همانند قبل)
     const sample = [];
     for (let i = 0; i < 50; i++) {
       const x = i * 0.5;
@@ -126,6 +108,8 @@ export default function PiecewiseLinearFit() {
       }
       sample.push({ x: x.toFixed(2), y: y.toFixed(2) });
     }
+    // مرتب‌سازی برای اطمینان از اتصال صحیح در نمونه
+    sample.sort((a, b) => parseFloat(a.x) - parseFloat(b.x));
     setInputText(sample.map(p => `${p.x} ${p.y}`).join('\n'));
   };
 
@@ -134,7 +118,7 @@ export default function PiecewiseLinearFit() {
   return (
     <div className="w-full h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-6 overflow-auto">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-white mb-6">Piecewise Linear Regression</h1>
+        <h1 className="text-3xl font-bold text-white mb-6">میان‌یابی خطی قطعه‌ای (Piecewise Linear Interpolation)</h1>
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Input Section */}
@@ -143,7 +127,7 @@ export default function PiecewiseLinearFit() {
             
             <textarea
               className="w-full h-48 bg-slate-900 text-white p-3 rounded border border-slate-600 font-mono text-sm mb-3"
-              placeholder="هر خط: x y&#10;مثال:&#10;0 3&#10;1 5&#10;2 7"
+              placeholder="هر خط: x y (نقاط بر اساس X مرتب می‌شوند)&#10;مثال:&#10;0 3&#10;1 5&#10;2 7"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
             />
@@ -170,25 +154,13 @@ export default function PiecewiseLinearFit() {
               </button>
             </div>
 
-            <div className="mb-4">
-              <label className="text-white text-sm mb-2 block">تعداد بخش‌ها (Segments)</label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={numSegments}
-                onChange={(e) => setNumSegments(parseInt(e.target.value) || 1)}
-                className="w-full bg-slate-900 text-white p-2 rounded border border-slate-600"
-              />
-            </div>
-
             <button
-              onClick={performSegmentation}
+              onClick={performInterpolation}
               disabled={points.length < 2}
               className="w-full bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white py-2 px-4 rounded flex items-center justify-center gap-2"
             >
               <Play size={18} />
-              محاسبه خطوط
+              محاسبه خطوط (میان‌یابی)
             </button>
 
             {nearest && (
@@ -200,7 +172,7 @@ export default function PiecewiseLinearFit() {
 
             {points.length > 0 && (
               <div className="mt-3 text-slate-400 text-sm">
-                تعداد نقاط: {points.length}
+                تعداد نقاط: {points.length} (تعداد بخش‌ها: {segments.length})
               </div>
             )}
           </div>
@@ -219,16 +191,20 @@ export default function PiecewiseLinearFit() {
                   labelStyle={{ color: '#fff' }}
                 />
                 <Legend />
-                <Scatter name="داده‌ها" data={points} fill="#3b82f6" />
+                {/* نقاط ورودی به صورت پراکنده */}
+                <Scatter name="نقاط داده" data={points} fill="#3b82f6" />
+                
+                {/* خطوط میان‌یابی */}
                 {segments.map((seg, idx) => (
                   <Scatter
                     key={idx}
                     name={`خط ${seg.id}`}
                     data={seg.lineData}
+                    // استفاده از رنگ برای هر بخش
                     fill={`hsl(${idx * 360 / segments.length}, 70%, 50%)`}
                     line={{ stroke: `hsl(${idx * 360 / segments.length}, 70%, 50%)`, strokeWidth: 3 }}
-                    lineType="joint"
-                    shape="circle"
+                    lineType="joint" // وصل کردن دو نقطه با خط
+                    shape="none" // عدم نمایش نقطه Scatter
                   />
                 ))}
               </ScatterChart>
@@ -243,7 +219,7 @@ export default function PiecewiseLinearFit() {
         {/* Results Section */}
         {segments.length > 0 && (
           <div className="bg-slate-800 rounded-lg p-4 shadow-xl border border-slate-700">
-            <h2 className="text-xl font-semibold text-white mb-4">نتایج محاسبات</h2>
+            <h2 className="text-xl font-semibold text-white mb-4">نتایج محاسبات (میان‌یابی)</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-900 text-slate-300">
@@ -252,8 +228,8 @@ export default function PiecewiseLinearFit() {
                     <th className="p-3">بازه X</th>
                     <th className="p-3">شیب (Slope)</th>
                     <th className="p-3">عرض از مبدا (Intercept)</th>
-                    <th className="p-3">R² (دقت)</th>
-                    <th className="p-3">معادله</th>
+                    <th className="p-3">دقت (R²)</th>
+                    <th className="p-3">معادله خط</th>
                   </tr>
                 </thead>
                 <tbody className="text-white">
