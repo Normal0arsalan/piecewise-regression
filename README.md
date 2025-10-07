@@ -253,7 +253,7 @@ If you use this method in your research, please cite:
 
 ```bibtex
 @software{dual_guaranteed_approximation,
-  author = {Your Name},
+  author = {Arsalan peiman},
   title = {Dual-Guaranteed Approximation: A Two-Stage Curve Fitting Method},
   year = {2025},
   url = {https://github.com/Normal0arsalan/piecewise-regression/edit/main}
